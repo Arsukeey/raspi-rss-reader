@@ -957,6 +957,7 @@ dependencies = [
 name = "raspi-rss-reader"
 version = "0.1.0"
 dependencies = [
+ "reqwest 0.9.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "rss 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2 0.32.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
