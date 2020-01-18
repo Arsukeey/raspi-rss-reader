@@ -9,10 +9,9 @@ use std::iter::FromIterator;
 #[derive(Default, Debug)]
 pub struct RSS {
     pub items: Vec<News>,
-    pub source: String,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct News {
     pub title: String,
     pub desc: String,
@@ -20,20 +19,32 @@ pub struct News {
     pub url: String,
     pub author: String,
     pub downloaded: bool,
+    pub source: String,
 }
 
 impl News {
-    pub fn from(item: Item, image: Option<String>, downloaded: bool) -> Result<Self, String> {
-        let title = item
+    pub fn from(
+        item: Item,
+        image: Option<String>,
+        downloaded: bool,
+        source: &str,
+    ) -> Result<Self, String> {
+        let mut title = item
             .title()
             .ok_or("could not find news' title")?
             .to_string();
+
+        if source == "G1" {
+            title = title.split('(').next().unwrap_or(&title).to_string();
+        }
+
         let desc = item
             .description()
             .ok_or("could not find news' description")?
             .to_string();
         let url = item.link().ok_or("could not find news' url")?.to_string();
         let author = item.author().unwrap_or("No author found.").to_string();
+        let source = source.to_string();
 
         Ok(Self {
             title,
@@ -42,6 +53,7 @@ impl News {
             url,
             author,
             downloaded,
+            source,
         })
     }
 }
@@ -71,26 +83,42 @@ impl RSS {
         }
     }
 
+    pub fn from(items: Vec<News>) -> Self {
+        Self { items }
+    }
+
     pub fn refresh_sputnikbr(&mut self) -> Result<(), String> {
         let channel = Channel::from_url("https://br.sputniknews.com/export/rss2/archive/index.xml")
             .ok()
             .ok_or("Could not find Sputnik's news.")?;
 
-        let items = Vec::from_iter(channel.items()[..30].iter().cloned());
+        let items = Vec::from_iter(channel.items()[..10].iter().cloned());
 
         for item in items {
-            let image = Some(
-                item.enclosure()
-                    .ok_or("couldn't find image's enclosure")?
-                    .url(),
-            );
-            // make it only fetch images when necessary and concurrently
-            let image = download(image.unwrap_or("could not find image's path")).ok();
-            self.items.push(News::from(item.clone(), image, true)?);
+            let mut image = None;
+            if let Some(enclosure) = item.enclosure() {
+                image = download(enclosure.url()).ok();
+            }
+            self.items
+                .push(News::from(item.clone(), image, true, "Sputnik BR")?);
         }
-        self.source = "Sputnik BR".to_string();
         Ok(())
     }
+
+    /*
+    pub fn refresh_bbc(&mut self) -> Result<(), String> {
+        let channel = Channel::from_url("http://feeds.bbci.co.uk/news/rss.xml")
+            .ok()
+            .ok_or("Could not find BBC's news.")?;
+
+        let items = Vec::from_iter(channel.items()[..10].iter().cloned());
+
+        for item in items {
+            self.items
+                .push(News::from(item.clone(), None, false, "BBC News")?);
+        }
+        Ok(())
+    }*/
 
     pub fn refresh_g1(&mut self) -> Result<(), String> {
         let err = "Could not fetch G1's news.".to_string();
@@ -104,7 +132,7 @@ impl RSS {
 
         let unified = unify(vec![cr.items().to_vec(), economia.items().to_vec()]);
 
-        let items = Vec::from_iter(unified[..30].iter().cloned());
+        let items = Vec::from_iter(unified[..10].iter().cloned());
 
         for item in items {
             let mut image;
@@ -125,17 +153,17 @@ impl RSS {
                 }
 
                 self.items
-                    .push(News::from(item.clone(), image, downloaded)?);
+                    .push(News::from(item.clone(), image, downloaded, "G1")?);
             } else {
-                self.items.push(News::from(item.clone(), None, false)?);
+                self.items
+                    .push(News::from(item.clone(), None, false, "G1 Notícias")?);
             }
         }
-        self.source = "G1".to_string();
         Ok(())
     }
 }
 
-pub fn unify(vs: Vec<Vec<Item>>) -> Vec<Item> {
+pub fn unify<T: Clone>(vs: Vec<Vec<T>>) -> Vec<T> {
     let mut v = vec![];
     for i in 0..vs[0].len() {
         for j in &vs {
@@ -153,7 +181,7 @@ pub fn download(url: &str) -> Result<String, String> {
         .unwrap_or(&"couldnt find name of image"))
     .to_string();
 
-    let mut name = format!("/tmp/raspi-pi-reader/{}", x);
+    let name = format!("/tmp/raspi-pi-reader/{}", x);
 
     if std::path::Path::new(&name).exists() {
         return Ok(name);
