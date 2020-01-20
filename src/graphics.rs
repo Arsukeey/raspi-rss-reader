@@ -101,13 +101,13 @@ impl Renderer {
 
         let image_not_avail = self
             .texture_creator
-            .load_texture(Path::new("no_image.jpg"))?;
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/no_image.jpg"))?;
 
-        let arrow_up = self.texture_creator.load_texture(Path::new("up.png"))?;
-        let arrow_down = self.texture_creator.load_texture(Path::new("down.png"))?;
-        let reload = self.texture_creator.load_texture(Path::new("reload.png"))?;
+        let arrow_up = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/up.png"))?;
+        let arrow_down = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/down.png"))?;
+        let reload = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/reload.png"))?;
 
-        let font = self.ttf_context.load_font("helvetica.ttf", 128)?;
+        let font = self.ttf_context.load_font("/usr/share/raspi-rss-reader/helvetica.ttf", 128)?;
 
         for (i, item) in self.news[self.news_index..(self.news_index + 3)]
             .iter()
@@ -229,7 +229,7 @@ impl Renderer {
 
         let image_not_avail = self
             .texture_creator
-            .load_texture(Path::new("no_image.jpg"))?;
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/no_image.jpg"))?;
 
         let img;
         if let Some(image) = &news.image {
@@ -238,8 +238,8 @@ impl Renderer {
             img = image_not_avail;
         }
 
-        let ret = self.texture_creator.load_texture(Path::new("return.png"))?;
-        let font = self.ttf_context.load_font("helvetica.ttf", 128)?;
+        let ret = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/return.png"))?;
+        let font = self.ttf_context.load_font("/usr/share/raspi-rss-reader/helvetica.ttf", 128)?;
 
         let dy;
         let t = news.title;
