@@ -3,10 +3,12 @@ use sdl2::image::{InitFlag, LoadTexture};
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::render::{Canvas, TextureCreator};
+use sdl2::render::{Canvas, Texture, TextureCreator};
+use sdl2::ttf::Font;
 use sdl2::video::{Window, WindowContext};
 
-use std::collections::HashSet;
+use std::cell::RefCell;
+
 use std::path::Path;
 
 use crate::items::{unify, News, RSS};
@@ -28,21 +30,30 @@ mod buttons {
 macro_rules! rect(
     ($x:expr, $y:expr, $w:expr, $h:expr) => (
         Rect::new($x as i32, $y as i32, $w as u32, $h as u32)
-    )
-);
+        )
+    );
 
 pub struct Renderer {
-    pub news: Vec<News>,
-    pub canvas: Canvas<Window>,
+    pub news: RefCell<Vec<News>>,
+    pub canvas: RefCell<Canvas<Window>>,
     pub sdl_context: sdl2::Sdl,
     pub video_subsystem: sdl2::VideoSubsystem,
     pub _image_context: sdl2::image::Sdl2ImageContext,
     pub texture_creator: TextureCreator<WindowContext>,
     pub ttf_context: sdl2::ttf::Sdl2TtfContext,
-    pub event_pump: sdl2::EventPump,
-    pub news_index: usize,
-    pub showing_desc: bool,
-    pub selected_news: usize,
+    pub event_pump: RefCell<sdl2::EventPump>,
+    pub news_index: RefCell<usize>,
+    pub showing_desc: RefCell<bool>,
+    pub selected_news: RefCell<usize>,
+}
+
+struct Textures<'a, 'b> {
+    pub image_not_avail: Texture<'a>,
+    pub arrow_up: Texture<'a>,
+    pub arrow_down: Texture<'a>,
+    pub reload: Texture<'a>,
+    pub go_back: Texture<'a>,
+    pub font: Font<'a, 'b>,
 }
 
 impl Renderer {
@@ -65,7 +76,7 @@ impl Renderer {
         */
 
         // group all the rss feeds in a single vector
-        let news = unify(vec![g1news.items, sputnik.items]);
+        let news = RefCell::new(unify(vec![g1news.items, sputnik.items]));
         // news.shuffle(&mut thread_rng());
 
         let window = video_subsystem
@@ -75,11 +86,13 @@ impl Renderer {
             .build()
             .map_err(|e| e.to_string())?;
 
-        let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
-        let texture_creator = canvas.texture_creator();
+        let canvas = RefCell::new(window.into_canvas().build().map_err(|e| e.to_string())?);
+        let texture_creator = canvas.borrow_mut().texture_creator();
 
-        let event_pump = sdl_context.event_pump()?;
-        canvas.set_draw_color(Color::RGB(0xE9, 0xE9, 0xE9));
+        let event_pump = RefCell::new(sdl_context.event_pump()?);
+        canvas
+            .borrow_mut()
+            .set_draw_color(Color::RGB(0xE9, 0xE9, 0xE9));
 
         Ok(Self {
             news,
@@ -90,26 +103,25 @@ impl Renderer {
             texture_creator,
             ttf_context,
             event_pump,
-            news_index: 0,
-            showing_desc: false,
-            selected_news: 0,
+            news_index: RefCell::new(0),
+            showing_desc: RefCell::new(false),
+            selected_news: RefCell::new(0),
         })
     }
 
-    pub fn prepare(&mut self) -> Result<(), String> {
-        self.showing_desc = false;
+    fn prepare(&self, textures: &Textures) -> Result<(), String> {
+        *self.showing_desc.borrow_mut() = false;
 
-        let image_not_avail = self
-            .texture_creator
-            .load_texture(Path::new("/usr/share/raspi-rss-reader/no_image.jpg"))?;
+        let image_not_avail = &textures.image_not_avail;
 
-        let arrow_up = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/up.png"))?;
-        let arrow_down = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/down.png"))?;
-        let reload = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/reload.png"))?;
+        let arrow_up = &textures.arrow_up;
+        let arrow_down = &textures.arrow_down;
+        let reload = &textures.reload;
 
-        let font = self.ttf_context.load_font("/usr/share/raspi-rss-reader/helvetica.ttf", 128)?;
+        let font = &textures.font;
 
-        for (i, item) in self.news[self.news_index..(self.news_index + 3)]
+        for (i, item) in self.news.borrow()
+            [(*self.news_index.borrow())..((*self.news_index.borrow()) + 3)]
             .iter()
             .enumerate()
         {
@@ -117,9 +129,12 @@ impl Renderer {
 
             if let Some(image) = &item.image {
                 let img = self.texture_creator.load_texture(Path::new(&image))?;
-                self.canvas.copy(&img, None, rect!(10, y, 120, 130))?;
+                self.canvas
+                    .borrow_mut()
+                    .copy(&img, None, rect!(10, y, 120, 130))?;
             } else {
                 self.canvas
+                    .borrow_mut()
                     .copy(&image_not_avail, None, rect!(10, y, 120, 130))?;
             }
 
@@ -150,17 +165,19 @@ impl Renderer {
                 .create_texture_from_surface(&surface)
                 .map_err(|e| e.to_string())?;
 
-            self.canvas.copy(&text, None, rect!(140, y + 10, dx, dy))?;
+            self.canvas
+                .borrow_mut()
+                .copy(&text, None, rect!(140, y + 10, dx, dy))?;
         }
 
         // copied later to be in the "last layer"
-        self.canvas.copy(
+        self.canvas.borrow_mut().copy(
             &arrow_up,
             None,
             rect!(buttons::WIDTH, buttons::UP_H, buttons::SIZE, buttons::SIZE),
         )?;
 
-        self.canvas.copy(
+        self.canvas.borrow_mut().copy(
             &arrow_down,
             None,
             rect!(
@@ -171,7 +188,7 @@ impl Renderer {
             ),
         )?;
 
-        self.canvas.copy(
+        self.canvas.borrow_mut().copy(
             &reload,
             None,
             rect!(
@@ -184,48 +201,73 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn render(&mut self) -> Result<(), String> {
-        self.prepare()?;
-        let mut prev_buttons = HashSet::new();
+    pub fn render(&self) -> Result<(), String> {
+        let image_not_avail = self
+            .texture_creator
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/no_image.jpg"))?;
 
-        self.canvas.present();
+        let arrow_up = self
+            .texture_creator
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/up.png"))?;
+        let arrow_down = self
+            .texture_creator
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/down.png"))?;
+        let reload = self
+            .texture_creator
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/reload.png"))?;
+        let go_back = self
+            .texture_creator
+            .load_texture(Path::new("/usr/share/raspi-rss-reader/return.png"))?;
+        let font = self
+            .ttf_context
+            .load_font("/usr/share/raspi-rss-reader/helvetica.ttf", 128)?;
+
+        let textures = Textures {
+            image_not_avail,
+            arrow_up,
+            arrow_down,
+            reload,
+            font,
+            go_back,
+        };
+
+        self.prepare(&textures)?;
+        self.canvas.borrow_mut().present();
+
         'running: loop {
-            for event in self.event_pump.poll_iter() {
+            for event in self.event_pump.borrow_mut().wait_timeout_iter(100) {
                 match event {
                     Event::KeyDown {
                         keycode: Some(Keycode::Escape),
                         ..
                     }
                     | Event::Quit { .. } => break 'running,
+                    Event::MouseButtonDown { x: x, y: y, .. } => {
+                        self.handle_mouse_state(&textures, x, y)?;
+
+                        self.canvas.borrow_mut().clear();
+
+                        if !*self.showing_desc.borrow() {
+                            self.prepare(&textures)?;
+                        } else {
+                            self.show_description(
+                                self.news.borrow()[*self.selected_news.borrow()].clone(),
+                                &textures,
+                            )?;
+                        }
+
+                        self.canvas.borrow_mut().present();
+                    }
                     _ => {}
                 }
             }
-
-            let mouse_state = self.event_pump.mouse_state();
-            let buttons: HashSet<_> = mouse_state.pressed_mouse_buttons().collect();
-
-            let new_buttons = &buttons - &prev_buttons;
-
-            if !new_buttons.is_empty() {
-                self.handle_mouse_state(mouse_state.x(), mouse_state.y())?;
-            }
-
-            prev_buttons = buttons;
-
-            self.canvas.clear();
-
-            if !self.showing_desc {
-                self.prepare()?;
-            } else {
-                self.show_description(self.news[self.selected_news].clone())?;
-            }
-            self.canvas.present();
         }
+        self.canvas.borrow_mut().present();
         Ok(())
     }
 
-    fn show_description(&mut self, news: News) -> Result<(), String> {
-        self.showing_desc = true;
+    fn show_description(&self, mut news: News, textures: &Textures) -> Result<(), String> {
+        *self.showing_desc.borrow_mut() = true;
 
         let image_not_avail = self
             .texture_creator
@@ -238,11 +280,11 @@ impl Renderer {
             img = image_not_avail;
         }
 
-        let ret = self.texture_creator.load_texture(Path::new("/usr/share/raspi-rss-reader/return.png"))?;
-        let font = self.ttf_context.load_font("/usr/share/raspi-rss-reader/helvetica.ttf", 128)?;
+        let ret = &textures.go_back;
+        let font = &textures.font;
 
         let dy;
-        let t = news.title;
+        let t = &news.title;
 
         if t.len() < 65 {
             dy = 50;
@@ -259,7 +301,7 @@ impl Renderer {
             .create_texture_from_surface(&surface)
             .map_err(|e| e.to_string())?;
 
-        let mut d = news.desc;
+        let mut d = &mut news.desc;
         if d.len() > 1000 {
             d.drain(1000..);
             d.push_str("...");
@@ -273,32 +315,40 @@ impl Renderer {
             .create_texture_from_surface(&surface)
             .map_err(|e| e.to_string())?;
 
-        self.canvas.copy(&img, None, rect!(10, 10, 120, 130))?;
-        self.canvas.copy(&title, None, rect!(140, 10, 650, dy))?;
         self.canvas
+            .borrow_mut()
+            .copy(&img, None, rect!(10, 10, 120, 130))?;
+        self.canvas
+            .borrow_mut()
+            .copy(&title, None, rect!(140, 10, 650, dy))?;
+        self.canvas
+            .borrow_mut()
             .copy(&desc, None, rect!(10, 150, 750, scr::HEIGHT - 160))?;
-        self.canvas.copy(&ret, None, rect!(720, 410, 70, 70))?;
+        self.canvas
+            .borrow_mut()
+            .copy(&ret, None, rect!(720, 410, 70, 70))?;
 
         Ok(())
     }
 
-    #[inline]
-    fn scroll_up(&mut self) {
+    fn scroll_up(&self) {
         eprintln!("Scrolling up...");
-        if self.news_index > 0 {
-            self.news_index -= 1;
+        let mut i = self.news_index.borrow_mut();
+        if *i > 0 {
+            *i -= 1;
         }
     }
 
     #[inline]
-    fn scroll_down(&mut self) {
+    fn scroll_down(&self) {
         eprintln!("Scrolling down...");
-        if self.news_index < self.news.len() - 3 {
-            self.news_index += 1;
+        let mut i = self.news_index.borrow_mut();
+        if *i < self.news.borrow().len() - 3 {
+            *i += 1;
         }
     }
 
-    fn refresh(&mut self) -> Result<(), String> {
+    fn refresh(&self) -> Result<(), String> {
         eprintln!("Refreshing...");
         let mut g1news = RSS::default();
         g1news.refresh_g1()?;
@@ -313,31 +363,34 @@ impl Renderer {
 
         let n = unify(vec![g1news.items, sputnik.items]);
 
-        self.news = n;
+        *self.news.borrow_mut() = n;
 
         Ok(())
     }
 
-    fn handle_mouse_state(&mut self, x: i32, y: i32) -> Result<(), String> {
+    fn handle_mouse_state(&self, textures: &Textures, x: i32, y: i32) -> Result<(), String> {
         if x >= buttons::WIDTH && y >= buttons::UP_H {
-            if self.showing_desc {
+            if *self.showing_desc.borrow() {
                 if y >= 410 {
-                    self.prepare()?;
+                    self.prepare(&textures)?;
                 }
             } else {
                 if y < buttons::DOWN_H {
                     self.scroll_up();
-                    self.prepare()?;
+                    self.prepare(&textures)?;
                 } else if y < buttons::RELOAD_H {
                     self.scroll_down();
-                    self.prepare()?;
+                    self.prepare(&textures)?;
                 } else {
                     self.refresh()?;
                 }
             }
         } else {
-            self.selected_news = self.news_index + ((y - 1) / 160) as usize;
-            self.show_description(self.news[self.selected_news].clone())?;
+            *self.selected_news.borrow_mut() = *self.news_index.borrow() + ((y - 1) / 160) as usize;
+            self.show_description(
+                self.news.borrow()[self.selected_news.borrow().clone()].clone(),
+                &textures,
+            )?;
         }
         Ok(())
     }

@@ -6,7 +6,7 @@ pub mod graphics;
 pub mod items;
 
 fn main() -> Result<(), String> {
-    let mut g = graphics::Renderer::new()?;
+    let g = graphics::Renderer::new()?;
     g.render()?;
     Ok(())
 }
