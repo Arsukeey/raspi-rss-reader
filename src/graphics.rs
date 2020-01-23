@@ -54,6 +54,7 @@ struct Textures<'a, 'b> {
     pub reload: Texture<'a>,
     pub go_back: Texture<'a>,
     pub font: Font<'a, 'b>,
+    pub images: RefCell<Vec<Texture<'a>>>,
 }
 
 impl Renderer {
@@ -112,13 +113,13 @@ impl Renderer {
     fn prepare(&self, textures: &Textures) -> Result<(), String> {
         *self.showing_desc.borrow_mut() = false;
 
-        let image_not_avail = &textures.image_not_avail;
-
         let arrow_up = &textures.arrow_up;
         let arrow_down = &textures.arrow_down;
         let reload = &textures.reload;
 
         let font = &textures.font;
+
+        const BASE: usize = 63;
 
         for (i, item) in self.news.borrow()
             [(*self.news_index.borrow())..((*self.news_index.borrow()) + 3)]
@@ -126,21 +127,13 @@ impl Renderer {
             .enumerate()
         {
             let y = i as u32 * (scr::HEIGHT / 4 + 40) + 10;
+            let text = &item.title;
 
-            if let Some(image) = &item.image {
-                let img = self.texture_creator.load_texture(Path::new(&image))?;
-                self.canvas
-                    .borrow_mut()
-                    .copy(&img, None, rect!(10, y, 120, 130))?;
-            } else {
-                self.canvas
-                    .borrow_mut()
-                    .copy(&image_not_avail, None, rect!(10, y, 120, 130))?;
-            }
-
-            const BASE: usize = 63;
-
-            let text = item.title.to_owned();
+            self.canvas.borrow_mut().copy(
+                &textures.images.borrow()[*self.news_index.borrow() + i],
+                None,
+                rect!(10, y, 120, 130),
+            )?;
 
             let dx;
             if i == 2 {
@@ -229,8 +222,10 @@ impl Renderer {
             reload,
             font,
             go_back,
+            images: RefCell::new(vec![]),
         };
 
+        self.refresh(RefCell::new(&textures))?;
         self.prepare(&textures)?;
         self.canvas.borrow_mut().present();
 
@@ -348,7 +343,7 @@ impl Renderer {
         }
     }
 
-    fn refresh(&self) -> Result<(), String> {
+    fn refresh<'a, 'b>(&'a self, textures: RefCell<&Textures<'a, 'b>>) -> Result<(), String> {
         eprintln!("Refreshing...");
         let mut g1news = RSS::default();
         g1news.refresh_g1()?;
@@ -365,10 +360,31 @@ impl Renderer {
 
         *self.news.borrow_mut() = n;
 
+        let texts = textures.borrow();
+        let mut imgs = texts.images.borrow_mut();
+
+        for item in self.news.borrow().iter() {
+            if let Some(image) = &item.image {
+                let img = self.texture_creator.load_texture(Path::new(&image))?;
+                imgs.push(img);
+            } else {
+                let image_not_avail = self
+                    .texture_creator
+                    .load_texture(Path::new("/usr/share/raspi-rss-reader/no_image.jpg"))?;
+
+                imgs.push(image_not_avail);
+            }
+        }
+
         Ok(())
     }
 
-    fn handle_mouse_state(&self, textures: &Textures, x: i32, y: i32) -> Result<(), String> {
+    fn handle_mouse_state<'a, 'b>(
+        &'a self,
+        textures: &Textures<'a, 'b>,
+        x: i32,
+        y: i32,
+    ) -> Result<(), String> {
         if x >= buttons::WIDTH && y >= buttons::UP_H {
             if *self.showing_desc.borrow() {
                 if y >= 410 {
@@ -382,7 +398,7 @@ impl Renderer {
                     self.scroll_down();
                     self.prepare(&textures)?;
                 } else {
-                    self.refresh()?;
+                    self.refresh(RefCell::new(textures))?;
                 }
             }
         } else {
