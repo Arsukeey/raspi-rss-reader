@@ -1,3 +1,5 @@
+// TODO: add ssh support to open news on browser
+
 use sdl2::event::Event;
 use sdl2::image::{InitFlag, LoadTexture};
 use sdl2::keyboard::Keycode;
@@ -264,16 +266,7 @@ impl Renderer {
     fn show_description(&self, mut news: News, textures: &Textures) -> Result<(), String> {
         *self.showing_desc.borrow_mut() = true;
 
-        let image_not_avail = self
-            .texture_creator
-            .load_texture(Path::new("/usr/share/raspi-rss-reader/no_image.jpg"))?;
-
-        let img;
-        if let Some(image) = &news.image {
-            img = self.texture_creator.load_texture(Path::new(&image))?;
-        } else {
-            img = image_not_avail;
-        }
+        let img = &textures.images.borrow()[self.selected_news.borrow().clone()];
 
         let ret = &textures.go_back;
         let font = &textures.font;
@@ -297,10 +290,18 @@ impl Renderer {
             .map_err(|e| e.to_string())?;
 
         let d = &mut news.desc;
+        let dy_desc;
         if d.len() > 1000 {
             d.drain(997..);
             d.push_str("...");
         }
+
+        if d.len() < 200 {
+            dy_desc = scr::HEIGHT / 2 - 130;
+        } else {
+            dy_desc = scr::HEIGHT - 160;
+        }
+
         let surface = font
             .render(&d)
             .blended_wrapped(Color::RGB(0, 0, 0), 4000)
@@ -318,7 +319,7 @@ impl Renderer {
             .copy(&title, None, rect!(140, 10, 650, dy))?;
         self.canvas
             .borrow_mut()
-            .copy(&desc, None, rect!(10, 150, 750, scr::HEIGHT - 160))?;
+            .copy(&desc, None, rect!(10, 150, 750, dy_desc))?;
         self.canvas
             .borrow_mut()
             .copy(&ret, None, rect!(720, 410, 70, 70))?;
