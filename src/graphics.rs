@@ -242,8 +242,8 @@ impl Renderer {
                         ..
                     }
                     | Event::Quit { .. } => break 'running,
-                    Event::MouseButtonDown { x: x, y: y, .. } => {
-                        self.handle_mouse_state(&textures, x, y)?;
+                    Event::MouseButtonDown { x: i, y: j, .. } => {
+                        self.handle_mouse_state(&textures, i, j)?;
 
                         self.canvas.borrow_mut().clear();
 
@@ -301,9 +301,9 @@ impl Renderer {
             .create_texture_from_surface(&surface)
             .map_err(|e| e.to_string())?;
 
-        let mut d = &mut news.desc;
+        let d = &mut news.desc;
         if d.len() > 1000 {
-            d.drain(1000..);
+            d.drain(997..);
             d.push_str("...");
         }
         let surface = font
